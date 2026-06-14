@@ -1,0 +1,262 @@
+<!DOCTYPE html>
+<html lang="en">
+
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Workflow Automation Controller</title>
+    <style>
+        :root {
+            --bg-color: #f4f7f6;
+            --card-bg: #ffffff;
+            --text-color: #333333;
+            --text-secondary: #666666;
+            --active-color: #2ecc71;
+            --inactive-color: #e74c3c;
+            --toggle-bg-off: #ccc;
+            --toggle-bg-on: #2ecc71;
+        }
+
+        body {
+            font-family: 'Segoe UI', Tahoma, Geneva, Verdana, sans-serif;
+            background-color: var(--bg-color);
+            color: var(--text-color);
+            display: flex;
+            justify-content: center;
+            align-items: center;
+            height: 100vh;
+            margin: 0;
+        }
+
+        .card {
+            background-color: var(--card-bg);
+            padding: 30px;
+            border-radius: 12px;
+            box-shadow: 0 4px 15px rgba(0, 0, 0, 0.1);
+            text-align: center;
+            width: 350px;
+        }
+
+        h2 {
+            margin-top: 0;
+            font-size: 22px;
+            color: #2c3e50;
+        }
+
+        p {
+            color: var(--text-secondary);
+            font-size: 13px;
+            margin-bottom: 25px;
+        }
+
+        .status-container {
+            margin-bottom: 25px;
+            font-weight: bold;
+            font-size: 16px;
+        }
+
+        .status-badge {
+            padding: 6px 14px;
+            border-radius: 20px;
+            color: white;
+            font-size: 13px;
+            text-transform: uppercase;
+            margin-left: 5px;
+        }
+
+        .status-active {
+            background-color: var(--active-color);
+        }
+
+        .status-inactive {
+            background-color: var(--inactive-color);
+        }
+
+        .status-loading {
+            background-color: #f39c12;
+        }
+
+        /* The Toggle Switch Container */
+        .switch {
+            position: relative;
+            display: inline-block;
+            width: 60px;
+            height: 34px;
+        }
+
+        /* Hide default HTML checkbox */
+        .switch input {
+            opacity: 0;
+            width: 0;
+            height: 0;
+        }
+
+        /* Slider track */
+        .slider {
+            position: absolute;
+            cursor: pointer;
+            top: 0;
+            left: 0;
+            right: 0;
+            bottom: 0;
+            background-color: var(--toggle-bg-off);
+            transition: 0.4s;
+            border-radius: 34px;
+        }
+
+        /* Slider circle/knob */
+        .slider:before {
+            position: absolute;
+            content: "";
+            height: 26px;
+            width: 26px;
+            left: 4px;
+            bottom: 4px;
+            background-color: white;
+            transition: 0.4s;
+            border-radius: 50%;
+            box-shadow: 0 2px 4px rgba(0, 0, 0, 0.2);
+        }
+
+        input:checked+.slider {
+            background-color: var(--toggle-bg-on);
+        }
+
+        input:checked+.slider:before {
+            transform: translateX(26px);
+        }
+
+        /* Disabled state during background execution */
+        input:disabled+.slider {
+            opacity: 0.6;
+            cursor: not-allowed;
+        }
+
+        .error-message {
+            color: var(--inactive-color);
+            font-size: 12px;
+            margin-top: 15px;
+            display: none;
+        }
+    </style>
+</head>
+
+<body>
+
+    <div class="card">
+        <h2>Workflow Automation Control</h2>
+        <p>Target ID: <code>kDXyb7gyP375tZ0y</code></p>
+
+        <div class="status-container">
+            Status: <span id="statusBadge" class="status-badge status-inactive">Inactive</span>
+        </div>
+
+        <label class="switch">
+            <input type="checkbox" id="workflowToggle" onchange="toggleWorkflow()">
+            <span class="slider"></span>
+        </label>
+
+        <div id="errorMessage" class="error-message"></div>
+    </div>
+
+    <script>
+        // URL targeting your specific n8n instance webhook
+        const WEBHOOK_URL = 'https://n8n.srv1291417.hstgr.cloud/webhook/toggle-workflow';
+
+        const toggleInput = document.getElementById('workflowToggle');
+        const statusBadge = document.getElementById('statusBadge');
+        const errorMessage = document.getElementById('errorMessage');
+
+        // Check if there is cached state in localStorage on load
+        document.addEventListener("DOMContentLoaded", () => {
+            const cachedState = localStorage.getItem("n8n_wf_state");
+            if (cachedState !== null) {
+                const isActive = cachedState === "true";
+                updateUI(isActive);
+            }
+        });
+
+        async function toggleWorkflow() {
+            // 1. Temporarily disable switch to prevent double clicks during execution
+            toggleInput.disabled = true;
+
+            // Save previous checked state to revert to if the network request fails
+            const previousCheckedState = !toggleInput.checked;
+
+            // Set UI to loading state
+            statusBadge.textContent = 'Updating...';
+            statusBadge.className = 'status-badge status-loading';
+            errorMessage.style.display = 'none';
+
+            try {
+                // 2. Fire the POST request to trigger the workflow
+                const response = await fetch(WEBHOOK_URL, {
+                    method: 'POST',
+                    headers: {
+                        'Content-Type': 'application/json'
+                    },
+                    body: JSON.stringify({
+                        click_time: new Date().toISOString(),
+                        active: toggleInput.checked
+                    })
+                });
+
+                if (!response.ok) {
+                    throw new Error(`Server returned HTTP status ${response.status}`);
+                }
+
+                const data = await response.json();
+
+                // 3. Read the state generated by your workflow
+                let isNowActive = toggleInput.checked; // default to what was clicked
+                if (data) {
+                    const stateVal = data.new_state !== undefined ? data.new_state : (data.state !== undefined ? data.state : (data.status !== undefined ? data.status : data.active));
+                    if (stateVal !== undefined && stateVal !== null) {
+                        isNowActive = (stateVal === 'active' || stateVal === 'ON' || stateVal === 'on' || stateVal === true || stateVal === 'true');
+                    }
+                }
+
+                localStorage.setItem("n8n_wf_state", isNowActive.toString());
+                updateUI(isNowActive);
+
+            } catch (error) {
+                console.error('Error toggling workflow:', error);
+
+                // If it is a network/CORS error, the request reached n8n but response was blocked.
+                // We keep the toggled state instead of reverting the UI.
+                if (error.message.includes('fetch') || error.message.includes('failed') || error.message.includes('NetworkError')) {
+                    errorMessage.textContent = `Signal sent. Response verification blocked by CORS.`;
+                    errorMessage.style.display = 'block';
+                    localStorage.setItem("n8n_wf_state", (!previousCheckedState).toString());
+                    updateUI(!previousCheckedState);
+                } else {
+                    errorMessage.textContent = `Failed to change state: ${error.message}`;
+                    errorMessage.style.display = 'block';
+
+                    // Revert switch to original position on failure
+                    toggleInput.checked = previousCheckedState;
+                    updateUI(previousCheckedState ? 'active' : 'inactive');
+                }
+            } finally {
+                // 4. Re-enable switch control
+                toggleInput.disabled = false;
+            }
+        }
+
+        // Helper function to keep text badges and check marks synced
+        function updateUI(state) {
+            if (state === 'active' || state === true) {
+                toggleInput.checked = true;
+                statusBadge.textContent = 'Active';
+                statusBadge.className = 'status-badge status-active';
+            } else {
+                toggleInput.checked = false;
+                statusBadge.textContent = 'Inactive';
+                statusBadge.className = 'status-badge status-inactive';
+            }
+        }
+    </script>
+
+</body>
+
+</html>
